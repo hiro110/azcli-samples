@@ -1,0 +1,32 @@
+#!/bin/bash
+
+##############################################
+#
+# コンフィグデフォルト設定
+# 各種パスワード情報入力
+# リソースグループ作成
+# 仮想ネットワークとサブネットの作成
+# パブリックIPアドレスの作成（静的IPとする）
+# NSGの作成
+# 仮想NICの作成
+# 可用性セットの作成
+# VMの作成
+# Azure Database for MySQL インスタンスの作成
+# Azure Database for MySQL インスタンスのVNetサブネット組込
+# ファイアウォール規則の構成
+# DB作成
+# 接続情報の取得
+#
+##############################################
+
+. ./cli.conf
+
+# リソースグループ作成
+az group create --name $RESOURCE_GROUP_NAME --location $LACATION
+
+
+./network/deploy.azcli
+
+./vm/deploy.azcli
+
+./azure_db_mysql/deploy.azcli

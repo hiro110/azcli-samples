@@ -1,0 +1,12 @@
+#!/bin/bash
+. ./cli.conf
+
+# リソースグループ作成
+az group create --name $RESOURCE_GROUP_NAME --location $LACATION
+
+
+./network/deploy.azcli
+
+./azure_db_mysql/deploy.azcli
+
+./webapps/deploy.azcli

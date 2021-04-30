@@ -1,0 +1,82 @@
+#!/bin/bash
+. ../cli.conf
+
+echo "----- start deploy Azure Database for MySQL -----"
+
+# 各種パスワード情報入力
+read -sp "Please input MySQL Admin Password: " __mysqladminpass; echo
+MYSQL_ADMIN_PASS="${__mysqladminpass}"
+
+# Azure Database for MySQL インスタンスの作成
+az mysql server create \
+  --resource-group $RESOURCE_GROUP_NAME \
+  --location $LACATION \
+  --name $DBSERVER_NAME \
+  --admin-user $MYSQL_ADMIN_NAME \
+  --admin-password  $MYSQL_ADMIN_PASS \
+  --ssl-enforcement Enabled \
+  --sku-name GP_Gen5_2  \
+  --storage-size 51200 \
+  --version 5.7
+
+#  サブネット確認
+az network vnet subnet show \
+  -g $RESOURCE_GROUP_NAME \
+  -n $DB_SUBNET_NAME \
+  --vnet-name $VNET_NAME
+
+#  Azure Database for MySQL サーバーMySQL配置
+az mysql server vnet-rule create \
+  -n myRule \
+  -g $RESOURCE_GROUP_NAME \
+  -s $DBSERVER_NAME \
+  --vnet-name $VNET_NAME \
+  --subnet $DB_SUBNET_NAME
+
+# パラメータ変更
+az mysql server configuration set -g $RESOURCE_GROUP_NAME -s $DBSERVER_NAME -n character_set_server --value utf8mb4
+az mysql server configuration set -g $RESOURCE_GROUP_NAME -s $DBSERVER_NAME -n slow_query_log --value ON
+az mysql server configuration set -g $RESOURCE_GROUP_NAME -s $DBSERVER_NAME -n time_zone --value +9:00
+az mysql server configuration set -g $RESOURCE_GROUP_NAME -s $DBSERVER_NAME -n redirect_enabled --value ON
+
+# DB作成
+az mysql db create -g $RESOURCE_GROUP_NAME -s $DBSERVER_NAME -n $TEST_DB --charset utf8mb4 --collation utf8_general_ci
+az mysql db create -g $RESOURCE_GROUP_NAME -s $DBSERVER_NAME -n $PROD_DB --charset utf8mb4 --collation utf8_general_ci
+
+# プライベートエンドポイントの作成
+az network private-endpoint create \
+    --name $PE_MYSQL \
+    --resource-group $RESOURCE_GROUP_NAME \
+    --vnet-name $VNET_NAME  \
+    --subnet $DB_SUBNET_NAME \
+    --private-connection-resource-id $(az resource show -g ${RESOURCE_GROUP_NAME} -n ${DBSERVER_NAME} --resource-type "Microsoft.DBforMySQL/servers" --query "id" -o tsv) \
+    --group-id mysqlServer \
+    --connection-name $PE_CONN
+
+# プライベートDNSゾーンを構成する
+az network private-dns zone create \
+    --resource-group $RESOURCE_GROUP_NAME \
+    --name "privatelink.azurewebsites.net"
+
+az network private-dns link vnet create \
+    --resource-group $RESOURCE_GROUP_NAME \
+    --zone-name "privatelink.azurewebsites.net" \
+    --name MyDNSLink \
+    --virtual-network $VNET_NAME \
+    --registration-enabled false
+
+#Query for the network interface ID
+networkInterfaceId=$(az network private-endpoint show --name ${PE_MYSQL} --resource-group ${RESOURCE_GROUP_NAME} --query 'networkInterfaces[0].id' -o tsv)
+
+az resource show --ids $networkInterfaceId --api-version 2019-04-01 -o json
+# Copy the content for privateIPAddress and FQDN matching the Azure database for MySQL name
+
+#Create DNS records
+az network private-dns record-set a create --name myserver --zone-name privatelink.mysql.database.azure.com --resource-group $RESOURCE_GROUP_NAME
+
+az network private-dns record-set a add-record --record-set-name $DBSERVER_NAME --zone-name privatelink.mysql.database.azure.com --resource-group $RESOURCE_GROUP_NAME -a $MYSQL_PRIVATE_IP
+
+# 接続情報の取得
+az mysql server show --resource-group $RESOURCE_GROUP_NAME --name $DBSERVER_NAME
+
+echo "----- finish deploy Azure Database for MySQL -----"

@@ -1,0 +1,5 @@
+bin/
+prod/
+test/
+azuazuredbmysql.azcli
+MyServerCACert.pem

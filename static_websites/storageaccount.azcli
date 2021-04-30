@@ -1,0 +1,69 @@
+#!/bin/bash
+
+########################################
+#
+# *** Set Global Config ***
+# *** Create Resource Group ***
+# *** Create Storage Account ***
+# *** Enable Storage Preview(Statice Web Sites) ***
+# *** Upload to Contents Files ***
+# *** Enable Loggong ***
+#
+########################################
+
+. ./cli.conf
+
+# --------------------------------------------------------------
+# *** Create Resource Group ***
+az group create --name $RESOURCE_GROUP_NAME --location $LACATION
+
+# *** Create Storage Account ***
+az storage account create \
+    -n $STORAGE_ACCOUNT_NAME \
+    -g $RESOURCE_GROUP_NAME \
+    -l $LACATION \
+    --access-tier $STORAGE_ACCOUNT_TIER \
+    --kind $STORAGE_ACCOUNT_KIND \
+    --sku $STORAGE_ACCOUNT_SKU
+
+# *** Enable Storage Preview ***
+az extension add --name storage-preview
+az storage blob service-properties update \
+    --account-name $STORAGE_ACCOUNT_NAME \
+    --static-website \
+    --404-document 404.html \
+    --index-document index.html
+
+az storage account show \
+    -n $STORAGE_ACCOUNT_NAME \
+    -g $RESOURCE_GROUP_NAME \
+    --query "primaryEndpoints.web" \
+    --output table
+
+# *** Upload to Contents Files ***
+az storage blob upload-batch \
+    -d $UPLOAD_TO_DESTINATION \
+    --account-name $STORAGE_ACCOUNT_NAME \
+    --source $UPLOAD_SOURCE_DIRECTORY \
+    --pattern *.html \
+    --content-type text/html
+az storage blob upload-batch \
+    -d $UPLOAD_TO_DESTINATION \
+    --account-name $STORAGE_ACCOUNT_NAME \
+    --source $UPLOAD_SOURCE_DIRECTORY \
+    --pattern *.css \
+    --content-type text/css
+az storage blob upload-batch \
+    -d $UPLOAD_TO_DESTINATION \
+    --account-name $STORAGE_ACCOUNT_NAME \
+    --source $UPLOAD_SOURCE_DIRECTORY \
+    --pattern *.gif \
+    --content-type images/gif
+
+# *** Enable Logging ***
+az storage logging update \
+    --log rwd \
+    --retention 365 \
+    --services b \
+    --account-name $STORAGE_ACCOUNT_NAME
+# --------------------------------------------------------------

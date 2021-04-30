@@ -1,0 +1,71 @@
+#!/bin/bash
+
+########################################
+#
+# *** Create Storage Account ***
+# *** Create Storage Container ***
+# *** Create App Service Plan ***
+# *** Create Web apps on Linux ***
+# *** Set Logging(Only Production) ***
+# *** Set Basic Auth(Only Test) ***
+# *** Clean up ***
+#
+########################################
+
+. ../cli.conf
+
+# --------------------------------------------------------------
+# *** Create Storage Account ***
+az storage account create --name $STORAGEACCOUNT_NAME --resource-group $RESOURCE_GROUP_NAME --location $LACATION --sku $STORAGEACCOUNT_SKU --https-only true
+
+# *** Create Storage Container ***
+az storage container create --account-name $STORAGEACCOUNT_NAME --name $BACKUP_CONTAINER --public-access off
+az storage container create --account-name $STORAGEACCOUNT_NAME --name $APPLOGS_CONTAINER --public-access off
+az storage container create --account-name $STORAGEACCOUNT_NAME --name $WEBLOGS_CONTAINER --public-access off
+
+# *** Create App Service Plan ***
+az appservice plan create \
+  --name $APPSERVICEPLAM_NAME \
+  --resource-group $RESOURCE_GROUP_NAME \
+  --sku $APPSERVICEPLAM_SKU \
+  --number-of-workers $WEBAPP_NUM_INSTANCE
+
+# *** Create Web apps***
+for WEBAPPS in ${WEBAPP_ARRAY[@]}; do
+    az webapp create --resource-group $RESOURCE_GROUP_NAME --plan $APPSERVICEPLAM_NAME --name $WEBAPPS --runtime "php|7.4"
+    az webapp config set \
+      --resource-group $RESOURCE_GROUP_NAME \
+      --name $WEBAPPS \
+      --always-on true \
+      --auto-heal-enabled true \
+      --min-tls-version 1.2 \
+      --use-32bit-worker-process false \
+      --http20-enabled false
+    az webapp update --resource-group $RESOURCE_GROUP_NAME --name $WEBAPPS --https-only true
+    creds=($(az webapp deployment list-publishing-profiles \
+        --name  $WEBAPPS \
+        --resource-group $RESOURCE_GROUP_NAME \
+        --query "[?contains(publishMethod, 'FTP')].[publishUrl,userName,userPWD]" --output tsv))
+
+    curl -T ./bin/HttpAuthModule.dll -u ${creds[1]}:${creds[2]} --ftp-create-dirs ${creds[0]}/bin/
+
+    # *** Set Logging(Only Production Env) ***
+    if [ $WEBAPPS = ${PROJECT_NAME} ]; then
+      az webapp config backup create --resource-group $RESOURCE_GROUP_NAME --webapp-name $WEBAPPS --container-url "https://${STORAGEACCOUNT_NAME}.blob.core.windows.net/${BACKUP_CONTAINER}/"
+      az webapp log config --resource-group $RESOURCE_GROUP_NAME --name $WEBAPPS --application-logging false \
+        --detailed-error-messages true \
+        --failed-request-tracing false \
+        --web-server-logging true \
+        --level information
+      curl -T ./prod/web.config -u ${creds[1]}:${creds[2]} ${creds[0]}/
+    fi
+
+    # *** Set Basic Auth(Only Test Env) ***
+    if [ $WEBAPPS = test-${PROJECT_NAME} ]; then
+      curl -T ./test/web.config -u ${creds[1]}:${creds[2]} ${creds[0]}/
+    fi
+done
+
+# *** Clean up ***
+#az group delete --name $RESOURCE_GROUP_NAME
+# --------------------------------------------------------------

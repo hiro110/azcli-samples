@@ -1,0 +1,49 @@
+#!/bin/bash
+. ./conf.txt
+
+# --------------------------------------------------------------
+echo "----- start deploy virtual machine for CentOS7 -----"
+
+# script-config.jsonの作成
+result=$(cat Centos7startup.sh | base64)
+cat << EOF > ./script-config.json
+{
+  "script": "${result}"
+}
+EOF
+
+# 仮想NICの作成
+az network nic create \
+    --resource-group $RESOURCE_GROUP_NAME \
+    --name $NIC_NAME \
+    --vnet-name $VNET_NAME \
+    --subnet $SUBNET_NAME \
+    --public-ip-address $PUBLICIP_NAME \
+    --network-security-group $NSG_NAME \
+    --private-ip-address $VM_PRIVATEIP
+
+# 可用性セットの作成
+az vm availability-set create \
+    --resource-group $RESOURCE_GROUP_NAME \
+    --name $AVSET_NAME
+
+# VMの作成
+az vm create \
+    --resource-group $RESOURCE_GROUP_NAME \
+    --name $VM_NAME \
+    --location $LACATION \
+    --availability-set $AVSET_NAME \
+    --nics $NIC_NAME \
+    --size $INSTANCE_SIZE \
+    --image $OS_IMAGE \
+    --admin-username $VM_ADMIN_NAME \
+    --ssh-key-value $PUB_KEY_PASS
+
+# スクリプト拡張
+az vm extension set \
+  --resource-group $RESOURCE_GROUP_NAME \
+  --vm-name $VM_NAME  --name customScript \
+  --publisher Microsoft.Azure.Extensions \
+  --settings ./script-config.json
+
+echo "----- finish deploy virtual machine for CentOS7 -----"

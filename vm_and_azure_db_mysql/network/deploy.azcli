@@ -1,0 +1,83 @@
+#!/bin/bash
+. ../cli.conf
+
+echo "----- start deploy VNet -----"
+
+# 仮想ネットワークとサブネットの作成
+az network vnet create \
+    --resource-group $RESOURCE_GROUP_NAME \
+    --name $VNET_NAME \
+    --address-prefix $VNET_ADDRESS \
+    --subnet-name $SUBNET_NAME \
+    --subnet-prefix $SUBNET_ADDRESS
+
+#  Azure Database for MySQL インスタンス用サブネット作成
+az network vnet subnet create \
+  -g $RESOURCE_GROUP_NAME \
+  -n $DB_SUBNET_NAME \
+  --vnet-name $VNET_NAME \
+  --address-prefix $DB_SUBNET_ADDRESS
+
+az network vnet subnet update \
+ --name $DB_SUBNET_NAME \
+ --resource-group $RESOURCE_GROUP_NAME \
+ --vnet-name $VNET_NAME \
+ --disable-private-endpoint-network-policies true
+
+# パブリックIPアドレスの作成（静的IPとする）
+az network public-ip create \
+    --resource-group $RESOURCE_GROUP_NAME \
+    --name $PUBLICIP_NAME \
+    --dns-name $DNS_LABEL \
+    --allocation-method Static
+
+# NSGの作成
+#  NSGの作成
+az network nsg create \
+    --resource-group $RESOURCE_GROUP_NAME \
+    --name $NSG_NAME
+
+#  NSGのルール作成
+## SSH許可
+az network nsg rule create \
+    --resource-group $RESOURCE_GROUP_NAME \
+    --nsg-name $NSG_NAME \
+    --name fromHproductsOk \
+    --priority 1000 \
+    --destination-port-range 22 \
+    --protocol tcp \
+    --source-address-prefixes $SSH_OK_IP \
+    --access allow
+
+## SSH(カスタムポート)許可
+az network nsg rule create \
+    --resource-group $RESOURCE_GROUP_NAME \
+    --nsg-name $NSG_NAME \
+    --name fromHproductsOkCustom \
+    --priority 1001 \
+    --destination-port-range 10022 \
+    --protocol tcp \
+    --source-address-prefixes $SSH_OK_IP \
+    --access allow
+
+## HTTP許可
+az network nsg rule create \
+    --resource-group $RESOURCE_GROUP_NAME \
+    --nsg-name $NSG_NAME \
+    --name myNetworkSecurityGroupRuleHTTP \
+    --priority 2000 \
+    --destination-port-range 80 \
+    --protocol tcp \
+    --access allow
+
+## HTTPS許可
+az network nsg rule create \
+    --resource-group $RESOURCE_GROUP_NAME \
+    --nsg-name $NSG_NAME \
+    --name myNetworkSecurityGroupRuleHTTPS \
+    --priority 2001 \
+    --destination-port-range 443 \
+    --protocol tcp \
+    --access allow
+
+echo "----- finish deploy VNet -----"
